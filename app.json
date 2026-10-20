@@ -41,10 +41,10 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Permita o acesso à câmera para ler o preço nas etiquetas.",
+          "cameraPermission": "Permita o acesso à câmera para ler o preço nas etiquetas, QR codes e códigos de barras.",
           "microphonePermission": false,
           "recordAudioAndroid": false,
-          "barcodeScannerEnabled": false
+          "barcodeScannerEnabled": true
         }
       ]
     ],

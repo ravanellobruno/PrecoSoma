@@ -1,9 +1,9 @@
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { type BarcodeSettings, CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { SymbolView } from 'expo-symbols';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/button';
 import { PriceInput } from '@/components/price-input';
 import { addItem } from '@/db';
+import { readBarcode } from '@/lib/barcode';
 import { formatCents } from '@/lib/format';
 import { type Rect, type TagReading } from '@/lib/price-tag';
 import { readPhoto } from '@/lib/read-photo';
@@ -29,11 +30,42 @@ import { colors, radius } from '@/theme';
 
 type Size = { width: number; height: number };
 
-type Result = { photoUri: string; reading: TagReading };
+/** `photoUri` is null when the price came from a QR code / barcode, which has no photo. */
+type Result = { photoUri: string | null; reading: TagReading; code?: string };
 
 const MAX_QUANTITY = 999;
 /** Selection index of the "Outro preço" option, after the suggested prices. */
 const OTHER = -1;
+
+/** What the camera reads: the price tag by photo (OCR), a QR code or a barcode, on their own. */
+type Mode = 'tag' | 'qr' | 'barcode';
+
+const MODE_ORDER: Mode[] = ['tag', 'qr', 'barcode'];
+const MODES: Record<
+  Mode,
+  { label: string; hint: string; noPrice: string; scanner: BarcodeSettings }
+> = {
+  tag: {
+    label: 'Etiqueta',
+    hint: 'Enquadre a etiqueta de preço',
+    noPrice: '',
+    scanner: { barcodeTypes: [] },
+  },
+  qr: {
+    label: 'QR code',
+    hint: 'Aponte para o QR code',
+    noPrice: 'Esse QR code não tem o preço.',
+    scanner: { barcodeTypes: ['qr'] },
+  },
+  barcode: {
+    label: 'Código de barras',
+    hint: 'Aponte para o código de barras',
+    noPrice: 'Esse código não tem o preço. Use a opção Etiqueta.',
+    scanner: { barcodeTypes: ['ean13', 'ean8', 'upc_a', 'code128'] },
+  },
+};
+/** How long the "code has no price" notice stays up (and ignores repeated reads of the code). */
+const NOTICE_MS = 3000;
 
 export default function ScanScreen() {
   const db = useSQLiteContext();
@@ -47,6 +79,13 @@ export default function ScanScreen() {
   const [result, setResult] = useState<Result | null>(null);
   // Price (in cents) picked from the result; opens the modal to finish the item.
   const [picked, setPicked] = useState<number | null>(null);
+  const [mode, setMode] = useState<Mode>('tag');
+  const [notice, setNotice] = useState<string | null>(null);
+  // The scanner fires repeatedly while a code stays in view; handle each scan once.
+  const scanned = useRef(false);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => () => clearTimeout(noticeTimer.current), []);
 
   if (!permission) return <View style={styles.camera} />;
 
@@ -74,7 +113,7 @@ export default function ScanScreen() {
     );
   }
 
-  const guide = guideRect(view);
+  const guide = guideRect(view, mode);
 
   async function capture() {
     if (reading || !camera.current) return;
@@ -88,6 +127,30 @@ export default function ScanScreen() {
     } finally {
       setReading(false);
     }
+  }
+
+  function handleBarcode({ type, data }: { type: string; data: string }) {
+    if (scanned.current || reading || notice) return;
+    const barcodeReading = readBarcode(type, data);
+    if (barcodeReading.candidates.length > 0) {
+      scanned.current = true;
+      setResult({ photoUri: null, reading: barcodeReading, code: data });
+      return;
+    }
+    // Most barcodes only identify the product; keep scanning instead of interrupting.
+    setNotice(MODES[mode].noPrice);
+    noticeTimer.current = setTimeout(() => setNotice(null), NOTICE_MS);
+  }
+
+  function changeMode(next: Mode) {
+    clearTimeout(noticeTimer.current);
+    setNotice(null);
+    setMode(next);
+  }
+
+  function retry() {
+    scanned.current = false;
+    setResult(null);
   }
 
   async function add(item: { description: string | null; quantity: number }) {
@@ -104,6 +167,8 @@ export default function ScanScreen() {
         style={StyleSheet.absoluteFill}
         active={!result}
         enableTorch={torch}
+        barcodeScannerSettings={MODES[mode].scanner}
+        onBarcodeScanned={mode === 'tag' || result || reading ? undefined : handleBarcode}
       />
 
       {/* Dims everything outside the guide. */}
@@ -135,7 +200,7 @@ export default function ScanScreen() {
             ]}
           />
           <Text style={[styles.hint, { top: guide.bottom + 16 }]}>
-            {reading ? 'Lendo etiqueta…' : 'Enquadre a etiqueta de preço'}
+            {reading ? 'Lendo etiqueta…' : (notice ?? MODES[mode].hint)}
           </Text>
         </>
       )}
@@ -161,20 +226,40 @@ export default function ScanScreen() {
         </Pressable>
       </View>
 
-      <View style={[styles.shutterArea, { paddingBottom: insets.bottom + 24 }]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Ler preço"
-          accessibilityState={{ disabled: reading }}
-          disabled={reading}
-          onPress={capture}
-          style={({ pressed }) => [styles.shutter, pressed && styles.shutterPressed]}>
-          {reading ? (
-            <ActivityIndicator color={colors.primary} />
-          ) : (
-            <View style={styles.shutterInner} />
-          )}
-        </Pressable>
+      <View style={[styles.bottomArea, { paddingBottom: insets.bottom + 24 }]}>
+        {mode === 'tag' && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Ler preço"
+            accessibilityState={{ disabled: reading }}
+            disabled={reading}
+            onPress={capture}
+            style={({ pressed }) => [styles.shutter, pressed && styles.shutterPressed]}>
+            {reading ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <View style={styles.shutterInner} />
+            )}
+          </Pressable>
+        )}
+        <View style={styles.modes}>
+          {MODE_ORDER.map((option) => {
+            const selected = option === mode;
+            return (
+              <Pressable
+                key={option}
+                accessibilityRole="button"
+                accessibilityState={{ selected, disabled: reading }}
+                disabled={reading}
+                onPress={() => changeMode(option)}
+                style={[styles.modeButton, selected && styles.modeButtonSelected]}>
+                <Text style={[styles.modeText, selected && styles.modeTextSelected]}>
+                  {MODES[option].label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       {result && (
@@ -182,7 +267,7 @@ export default function ScanScreen() {
           result={result}
           bottomInset={insets.bottom}
           onPick={setPicked}
-          onRetry={() => setResult(null)}
+          onRetry={retry}
         />
       )}
 
@@ -223,11 +308,26 @@ function ResultSheet({
 
   return (
     <KeyboardAvoidingView behavior="padding" style={[StyleSheet.absoluteFill, styles.result]}>
-      <Image source={{ uri: result.photoUri }} style={styles.photo} contentFit="cover" />
+      {result.photoUri ? (
+        <Image source={{ uri: result.photoUri }} style={styles.photo} contentFit="cover" />
+      ) : (
+        <View style={[styles.photo, styles.codePreview]}>
+          <SymbolView
+            name={{ ios: 'qrcode.viewfinder', android: 'qr_code_scanner', web: 'qr_code_scanner' }}
+            tintColor="#FFFFFF"
+            size={56}
+          />
+          <Text style={styles.codeText} numberOfLines={3}>
+            {result.code}
+          </Text>
+        </View>
+      )}
       <View style={[styles.sheet, { paddingBottom: Math.max(bottomInset, 16) }]}>
         {candidates.length > 0 ? (
           <>
-            <Text style={styles.title}>Qual preço você quer adicionar?</Text>
+            <Text style={styles.title}>
+              {result.photoUri ? 'Qual preço você quer adicionar?' : 'Preço encontrado no código'}
+            </Text>
             <ScrollView
               style={styles.options}
               contentContainerStyle={styles.optionsContent}
@@ -265,7 +365,7 @@ function ResultSheet({
             </ScrollView>
             <View style={styles.actions}>
               <Button
-                label="Tirar outra foto"
+                label={result.photoUri ? 'Tirar outra foto' : 'Ler de novo'}
                 variant="outline"
                 onPress={onRetry}
                 style={styles.action}
@@ -406,9 +506,9 @@ function AddItemModal({
 }
 
 /** Area the user frames the tag in, in screen coordinates. */
-function guideRect(view: Size): Rect {
-  const width = Math.min(view.width - 48, 420);
-  const height = width * 0.7;
+function guideRect(view: Size, mode: Mode): Rect {
+  const width = mode === 'qr' ? Math.min(view.width - 96, 280) : Math.min(view.width - 48, 420);
+  const height = mode === 'qr' ? width : width * (mode === 'barcode' ? 0.4 : 0.7);
   const top = Math.max(0, view.height * 0.4 - height / 2);
   const left = (view.width - width) / 2;
   return { left, top, right: left + width, bottom: top + height };
@@ -458,7 +558,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   topBarText: { fontSize: 17, fontWeight: '600', color: '#FFFFFF' },
-  shutterArea: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' },
+  bottomArea: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    gap: 20,
+  },
+  modes: { flexDirection: 'row', gap: 8 },
+  modeButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+  },
+  modeButtonSelected: { backgroundColor: '#FFFFFF' },
+  modeText: { fontSize: 14, fontWeight: '600', color: '#FFFFFF' },
+  modeTextSelected: { color: colors.text },
   shutter: {
     width: 76,
     height: 76,
@@ -483,6 +600,13 @@ const styles = StyleSheet.create({
 
   result: { backgroundColor: '#000000' },
   photo: { flex: 1 },
+  codePreview: { alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 },
+  codeText: {
+    fontSize: 15,
+    textAlign: 'center',
+    color: '#FFFFFF',
+    fontVariant: ['tabular-nums'],
+  },
   sheet: {
     gap: 10,
     paddingHorizontal: 16,
