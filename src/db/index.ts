@@ -82,8 +82,27 @@ export async function addItem(
   });
 }
 
+export async function updateItem(
+  db: SQLiteDatabase,
+  itemId: number,
+  item: { description: string | null; priceCents: number; quantity: number },
+) {
+  await db.runAsync(
+    'UPDATE items SET description = ?, price_cents = ?, quantity = ? WHERE id = ?',
+    item.description,
+    item.priceCents,
+    item.quantity,
+    itemId,
+  );
+}
+
 export async function deleteItem(db: SQLiteDatabase, itemId: number) {
   await db.runAsync('DELETE FROM items WHERE id = ?', itemId);
+}
+
+/** Removes every item of the purchase, keeping the purchase itself. */
+export async function clearItems(db: SQLiteDatabase, purchaseId: number) {
+  await db.runAsync('DELETE FROM items WHERE purchase_id = ?', purchaseId);
 }
 
 export async function finishPurchase(db: SQLiteDatabase, purchaseId: number) {
@@ -115,6 +134,15 @@ export async function deletePurchase(db: SQLiteDatabase, purchaseId: number) {
   await db.withTransactionAsync(async () => {
     await db.runAsync('DELETE FROM items WHERE purchase_id = ?', purchaseId);
     await db.runAsync('DELETE FROM purchases WHERE id = ?', purchaseId);
+  });
+}
+
+export async function deletePurchases(db: SQLiteDatabase, purchaseIds: number[]) {
+  if (purchaseIds.length === 0) return;
+  const marks = purchaseIds.map(() => '?').join(', ');
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(`DELETE FROM items WHERE purchase_id IN (${marks})`, purchaseIds);
+    await db.runAsync(`DELETE FROM purchases WHERE id IN (${marks})`, purchaseIds);
   });
 }
 

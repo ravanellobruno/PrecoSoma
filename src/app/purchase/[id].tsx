@@ -1,12 +1,21 @@
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { EditItemModal } from '@/components/edit-item-modal';
 import { ItemRow } from '@/components/item-row';
-import { deletePurchase, getPurchase, listItems, totalCents, type Item } from '@/db';
+import {
+  deleteItem,
+  deletePurchase,
+  getPurchase,
+  listItems,
+  totalCents,
+  updateItem,
+  type Item,
+} from '@/db';
 import { formatCents, formatDateTime, pluralize } from '@/lib/format';
 import { colors, radius } from '@/theme';
 
@@ -17,14 +26,44 @@ export default function PurchaseDetailScreen() {
 
   const [finishedAt, setFinishedAt] = useState<number | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [editing, setEditing] = useState<Item | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const purchase = await getPurchase(db, purchaseId);
-      setFinishedAt(purchase?.finished_at ?? null);
-      setItems(await listItems(db, purchaseId));
-    })();
+  const load = useCallback(async () => {
+    const purchase = await getPurchase(db, purchaseId);
+    setFinishedAt(purchase?.finished_at ?? null);
+    setItems(await listItems(db, purchaseId));
   }, [db, purchaseId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
+
+  async function handleSave(changes: {
+    description: string | null;
+    priceCents: number;
+    quantity: number;
+  }) {
+    if (!editing) return;
+    await updateItem(db, editing.id, changes);
+    setEditing(null);
+    await load();
+  }
+
+  function handleDeleteItem(item: Item) {
+    Alert.alert('Remover item?', item.description ?? undefined, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Remover',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteItem(db, item.id);
+          await load();
+        },
+      },
+    ]);
+  }
 
   function handleDelete() {
     Alert.alert('Excluir compra?', 'Esta ação não pode ser desfeita.', [
@@ -57,14 +96,22 @@ export default function PurchaseDetailScreen() {
             <Text style={styles.totalLabel}>{pluralize(items.length, 'item', 'itens')}</Text>
           </View>
         }
-        renderItem={({ item, index }) => (
-          <ItemRow item={item} position={items.length - index} />
+        renderItem={({ item }) => (
+          <ItemRow
+            item={item}
+            onEdit={() => setEditing(item)}
+            onDelete={() => handleDeleteItem(item)}
+          />
         )}
       />
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <Button label="Excluir compra" variant="danger" onPress={handleDelete} />
       </View>
+
+      {editing && (
+        <EditItemModal item={editing} onSave={handleSave} onClose={() => setEditing(null)} />
+      )}
     </View>
   );
 }

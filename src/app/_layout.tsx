@@ -21,6 +21,7 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="history" options={{ title: 'Histórico' }} />
         <Stack.Screen name="purchase/[id]" options={{ title: 'Compra' }} />
+        <Stack.Screen name="scan" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
       </Stack>
     </SQLiteProvider>
   );

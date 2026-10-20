@@ -1,10 +1,12 @@
-import { router, useFocusEffect } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useState } from 'react';
+import { SymbolView } from 'expo-symbols';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -14,15 +16,18 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { EditItemModal } from '@/components/edit-item-modal';
 import { EmptyState } from '@/components/empty-state';
 import { ItemRow } from '@/components/item-row';
 import {
   addItem,
+  clearItems,
   deleteItem,
   finishPurchase,
   getCurrentPurchaseId,
   listItems,
   totalCents,
+  updateItem,
   type Item,
 } from '@/db';
 import { formatCents, pluralize } from '@/lib/format';
@@ -30,13 +35,21 @@ import { colors, radius } from '@/theme';
 
 const MAX_PRICE_DIGITS = 9;
 const MAX_QUANTITY = 999;
+// Time for the camera screen to finish closing before the price field takes focus.
+const FOCUS_DELAY_MS = 450;
+// Text recognition runs on-device and is only available on iOS/Android.
+const CAN_SCAN = Platform.OS !== 'web';
 
 export default function CurrentPurchaseScreen() {
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
+  const priceInput = useRef<TextInput>(null);
+  // Set by the camera screen to hand over to typing ("Digitar preço"); changes on every use.
+  const { focusPrice } = useLocalSearchParams<{ focusPrice?: string }>();
 
   const [purchaseId, setPurchaseId] = useState<number | null>(null);
   const [items, setItems] = useState<Item[]>([]);
+  const [editing, setEditing] = useState<Item | null>(null);
 
   const [priceCents, setPriceCents] = useState(0);
   const [quantity, setQuantity] = useState(1);
@@ -55,6 +68,13 @@ export default function CurrentPurchaseScreen() {
     }, [refresh]),
   );
 
+  useEffect(() => {
+    if (!focusPrice) return;
+    // The camera screen is still sliding away for a moment; focusing before that is ignored.
+    const timer = setTimeout(() => priceInput.current?.focus(), FOCUS_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [focusPrice]);
+
   const total = totalCents(items);
   const units = items.reduce((sum, i) => sum + i.quantity, 0);
   const lineTotal = priceCents * quantity;
@@ -72,6 +92,17 @@ export default function CurrentPurchaseScreen() {
     await refresh();
   }
 
+  async function handleSave(changes: {
+    description: string | null;
+    priceCents: number;
+    quantity: number;
+  }) {
+    if (!editing) return;
+    await updateItem(db, editing.id, changes);
+    setEditing(null);
+    await refresh();
+  }
+
   function handleDelete(item: Item) {
     Alert.alert('Remover item?', item.description ?? undefined, [
       { text: 'Cancelar', style: 'cancel' },
@@ -80,6 +111,22 @@ export default function CurrentPurchaseScreen() {
         style: 'destructive',
         onPress: async () => {
           await deleteItem(db, item.id);
+          await refresh();
+        },
+      },
+    ]);
+  }
+
+  function handleClear() {
+    if (purchaseId === null) return;
+    const count = pluralize(items.length, 'item será removido', 'itens serão removidos');
+    Alert.alert('Limpar itens?', `${count} da compra.`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Limpar',
+        style: 'destructive',
+        onPress: async () => {
+          await clearItems(db, purchaseId);
           await refresh();
         },
       },
@@ -120,9 +167,16 @@ export default function CurrentPurchaseScreen() {
           {formatCents(total)}
         </Text>
         <View style={styles.totalFooter}>
-          <Text style={styles.totalMeta}>
-            {pluralize(items.length, 'item', 'itens')} · {pluralize(units, 'unidade', 'unidades')}
-          </Text>
+          <View style={styles.totalInfo}>
+            <Text style={styles.totalMeta}>
+              {pluralize(items.length, 'item', 'itens')} · {pluralize(units, 'unidade', 'unidades')}
+            </Text>
+            {items.length > 0 && (
+              <Pressable accessibilityRole="button" hitSlop={8} onPress={handleClear}>
+                <Text style={styles.clearLink}>Limpar itens</Text>
+              </Pressable>
+            )}
+          </View>
           <Button
             label="Finalizar"
             variant="outline"
@@ -140,16 +194,41 @@ export default function CurrentPurchaseScreen() {
         keyExtractor={(item) => String(item.id)}
         keyboardShouldPersistTaps="handled"
         ListEmptyComponent={
-          <EmptyState title="Nenhum produto ainda" hint="Informe o preço abaixo e toque em Adicionar." />
+          <EmptyState
+            title="Nenhum produto ainda"
+            hint={
+              CAN_SCAN
+                ? 'Leia o preço pela câmera ou digite abaixo e toque em Adicionar.'
+                : 'Informe o preço abaixo e toque em Adicionar.'
+            }
+          />
         }
-        renderItem={({ item, index }) => (
-          <ItemRow item={item} position={items.length - index} onDelete={() => handleDelete(item)} />
+        renderItem={({ item }) => (
+          <ItemRow
+            item={item}
+            onEdit={() => setEditing(item)}
+            onDelete={() => handleDelete(item)}
+          />
         )}
       />
 
       <View style={[styles.form, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.formRow}>
+          {CAN_SCAN && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Ler preço pela câmera"
+              style={({ pressed }) => [styles.scanButton, pressed && styles.scanButtonPressed]}
+              onPress={() => router.push('/scan')}>
+              <SymbolView
+                name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+                tintColor={colors.primary}
+                size={24}
+              />
+            </Pressable>
+          )}
           <TextInput
+            ref={priceInput}
             accessibilityLabel="Preço"
             style={[styles.input, styles.priceInput]}
             keyboardType="number-pad"
@@ -194,6 +273,10 @@ export default function CurrentPurchaseScreen() {
           onPress={handleAdd}
         />
       </View>
+
+      {editing && (
+        <EditItemModal item={editing} onSave={handleSave} onClose={() => setEditing(null)} />
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -219,13 +302,15 @@ const styles = StyleSheet.create({
   },
   totalLabel: { fontSize: 14, fontWeight: '500', color: colors.textSecondary },
   totalValue: {
-    fontSize: 40,
+    fontSize: 32,
     fontWeight: '700',
     color: colors.primary,
     fontVariant: ['tabular-nums'],
   },
   totalFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  totalInfo: { gap: 2 },
   totalMeta: { fontSize: 14, color: colors.textSecondary },
+  clearLink: { fontSize: 14, fontWeight: '600', color: colors.danger },
   finishButton: { minHeight: 36, paddingHorizontal: 14 },
 
   list: { flex: 1 },
@@ -251,6 +336,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
   },
+  scanButton: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.primarySoft,
+  },
+  scanButtonPressed: { opacity: 0.7 },
   priceInput: { flex: 1, fontSize: 20, fontWeight: '600', fontVariant: ['tabular-nums'] },
   stepper: {
     flexDirection: 'row',

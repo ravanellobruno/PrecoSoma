@@ -1,3 +1,4 @@
+import { SymbolView } from 'expo-symbols';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { Item } from '@/db';
@@ -6,30 +7,45 @@ import { colors } from '@/theme';
 
 type Props = {
   item: Item;
-  /** Fallback label when the item has no description. */
-  position: number;
+  onEdit?: () => void;
   onDelete?: () => void;
 };
 
-export function ItemRow({ item, position, onDelete }: Props) {
+export function ItemRow({ item, onEdit, onDelete }: Props) {
   return (
     <View style={styles.row}>
       <View style={styles.info}>
-        <Text style={styles.title} numberOfLines={2}>
-          {item.description ?? `Item ${position}`}
-        </Text>
+        {item.description && (
+          <Text style={styles.title} numberOfLines={2}>
+            {item.description}
+          </Text>
+        )}
         <Text style={styles.detail}>
           {item.quantity} × {formatCents(item.price_cents)}
         </Text>
       </View>
       <Text style={styles.subtotal}>{formatCents(item.price_cents * item.quantity)}</Text>
+      {onEdit && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Editar item"
+          hitSlop={8}
+          onPress={onEdit}
+          style={styles.action}>
+          <SymbolView
+            name={{ ios: 'pencil', android: 'edit', web: 'edit' }}
+            tintColor={colors.primary}
+            size={18}
+          />
+        </Pressable>
+      )}
       {onDelete && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Remover item"
           hitSlop={8}
           onPress={onDelete}
-          style={styles.delete}>
+          style={styles.action}>
           <Text style={styles.deleteText}>✕</Text>
         </Pressable>
       )}
@@ -50,6 +66,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 16, fontWeight: '500', color: colors.text },
   detail: { fontSize: 14, color: colors.textSecondary, fontVariant: ['tabular-nums'] },
   subtotal: { fontSize: 16, fontWeight: '600', color: colors.text, fontVariant: ['tabular-nums'] },
-  delete: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  action: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   deleteText: { fontSize: 16, color: colors.textSecondary },
 });
