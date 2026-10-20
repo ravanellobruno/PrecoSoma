@@ -62,7 +62,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-  info: { flex: 1, gap: 2 },
+  info: { flex: 1, gap: 2, paddingLeft: 8 },
   title: { fontSize: 16, fontWeight: '500', color: colors.text },
   detail: { fontSize: 14, color: colors.textSecondary, fontVariant: ['tabular-nums'] },
   subtotal: { fontSize: 16, fontWeight: '600', color: colors.text, fontVariant: ['tabular-nums'] },

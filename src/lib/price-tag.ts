@@ -94,7 +94,9 @@ export function mergeReadings(readings: TagReading[]): TagReading {
   };
 }
 
-export function readPriceTag(lines: OcrLine[]): TagReading {
+export function readPriceTag(recognized: OcrLine[]): TagReading {
+  // Vertical text (side labels, rotated prices) is not the price to pay.
+  const lines = recognized.filter((line) => !isVertical(line));
   const found: Candidate[] = [];
   const priceLines = new Set<OcrLine>();
 
@@ -283,6 +285,16 @@ function isLabelFor(label: Rect, value: Rect): boolean {
   const rowOffset = Math.abs(center(label).y - center(value).y);
   const left = label.right <= value.left + height * 0.3 && value.left - label.right < height * 3;
   return above || (left && rowOffset < height * 0.6);
+}
+
+/**
+ * Text running up or down: its box is much taller than wide. Needs a few characters, since a
+ * lone digit is naturally taller than wide.
+ */
+function isVertical(line: OcrLine): boolean {
+  const { frame } = line;
+  const characters = line.text.replace(/\s/g, '').length;
+  return characters >= 3 && frame.bottom - frame.top > (frame.right - frame.left) * 1.5;
 }
 
 function digitHeight(line: OcrLine): number {
