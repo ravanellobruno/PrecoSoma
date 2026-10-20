@@ -1,6 +1,6 @@
+import { Image } from 'expo-image';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -217,13 +217,14 @@ export default function CurrentPurchaseScreen() {
           {CAN_SCAN && (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Ler preço pela câmera"
+              accessibilityLabel="Escanear preço"
               style={({ pressed }) => [styles.scanButton, pressed && styles.scanButtonPressed]}
               onPress={() => router.push('/scan')}>
-              <SymbolView
-                name={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+              <Image
+                source={require('../../assets/images/scanner.png')}
                 tintColor={colors.primary}
-                size={24}
+                style={styles.scanIcon}
+                contentFit="contain"
               />
             </Pressable>
           )}
@@ -339,6 +340,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   scanButtonPressed: { opacity: 0.7 },
+  scanIcon: { width: 40, height: 40 },
   priceInput: { flex: 1, fontSize: 20, fontWeight: '600', fontVariant: ['tabular-nums'] },
   stepper: {
     flexDirection: 'row',
