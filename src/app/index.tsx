@@ -76,7 +76,6 @@ export default function CurrentPurchaseScreen() {
   }, [focusPrice]);
 
   const total = totalCents(items);
-  const units = items.reduce((sum, i) => sum + i.quantity, 0);
   const lineTotal = priceCents * quantity;
 
   async function handleAdd() {
@@ -168,9 +167,6 @@ export default function CurrentPurchaseScreen() {
         </Text>
         <View style={styles.totalFooter}>
           <View style={styles.totalInfo}>
-            <Text style={styles.totalMeta}>
-              {pluralize(items.length, 'item', 'itens')} · {pluralize(units, 'unidade', 'unidades')}
-            </Text>
             {items.length > 0 && (
               <Pressable accessibilityRole="button" hitSlop={8} onPress={handleClear}>
                 <Text style={styles.clearLink}>Limpar itens</Text>
@@ -303,8 +299,7 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   totalFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  totalInfo: { gap: 2 },
-  totalMeta: { fontSize: 14, color: colors.textSecondary },
+  totalInfo: { gap: 2, alignSelf: 'flex-end' },
   clearLink: { fontSize: 14, fontWeight: '600', color: colors.danger },
   finishButton: { minHeight: 36, paddingHorizontal: 14 },
 
