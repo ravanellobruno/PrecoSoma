@@ -13,11 +13,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { PriceInput } from '@/components/price-input';
 import type { Item } from '@/db';
 import { formatCents } from '@/lib/format';
 import { colors, radius } from '@/theme';
 
-const MAX_PRICE_DIGITS = 9;
 const MAX_QUANTITY = 999;
 
 type Props = {
@@ -58,17 +58,11 @@ export function EditItemModal({ item, onSave, onClose }: Props) {
 
           <Text style={styles.fieldLabel}>Preço</Text>
           <View style={styles.field}>
-            <TextInput
+            <PriceInput
               accessibilityLabel="Preço"
               style={styles.input}
-              keyboardType="number-pad"
-              placeholder="R$ 0,00"
-              placeholderTextColor={colors.disabled}
-              value={priceCents > 0 ? formatCents(priceCents) : ''}
-              onChangeText={(text) => {
-                const digits = text.replace(/\D/g, '').slice(0, MAX_PRICE_DIGITS);
-                setPriceCents(digits ? parseInt(digits, 10) : 0);
-              }}
+              cents={priceCents}
+              onChangeCents={setPriceCents}
             />
           </View>
 

@@ -19,6 +19,7 @@ import { Button } from '@/components/button';
 import { EditItemModal } from '@/components/edit-item-modal';
 import { EmptyState } from '@/components/empty-state';
 import { ItemRow } from '@/components/item-row';
+import { PriceInput } from '@/components/price-input';
 import {
   addItem,
   clearItems,
@@ -33,7 +34,6 @@ import {
 import { formatCents, pluralize } from '@/lib/format';
 import { colors, radius } from '@/theme';
 
-const MAX_PRICE_DIGITS = 9;
 const MAX_QUANTITY = 999;
 // Time for the camera screen to finish closing before the price field takes focus.
 const FOCUS_DELAY_MS = 450;
@@ -227,18 +227,12 @@ export default function CurrentPurchaseScreen() {
               />
             </Pressable>
           )}
-          <TextInput
+          <PriceInput
             ref={priceInput}
             accessibilityLabel="Preço"
             style={[styles.input, styles.priceInput]}
-            keyboardType="number-pad"
-            placeholder="R$ 0,00"
-            placeholderTextColor={colors.disabled}
-            value={priceCents > 0 ? formatCents(priceCents) : ''}
-            onChangeText={(text) => {
-              const digits = text.replace(/\D/g, '').slice(0, MAX_PRICE_DIGITS);
-              setPriceCents(digits ? parseInt(digits, 10) : 0);
-            }}
+            cents={priceCents}
+            onChangeCents={setPriceCents}
           />
           <View style={styles.stepper}>
             <Pressable

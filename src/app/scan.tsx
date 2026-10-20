@@ -20,6 +20,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button } from '@/components/button';
+import { PriceInput } from '@/components/price-input';
 import { addItem } from '@/db';
 import { formatCents } from '@/lib/format';
 import { type Rect, type TagReading } from '@/lib/price-tag';
@@ -31,7 +32,6 @@ type Size = { width: number; height: number };
 type Result = { photoUri: string; reading: TagReading };
 
 const MAX_QUANTITY = 999;
-const MAX_PRICE_DIGITS = 9;
 /** Selection index of the "Outro preço" option, after the suggested prices. */
 const OTHER = -1;
 
@@ -253,19 +253,13 @@ function ResultSheet({
                 style={[styles.option, selected === OTHER && styles.optionChecked]}>
                 <Radio checked={selected === OTHER} />
                 <Text style={styles.optionValue}>Outro preço:</Text>
-                <TextInput
+                <PriceInput
                   ref={customInput}
                   accessibilityLabel="Outro preço"
                   style={styles.customInput}
-                  keyboardType="number-pad"
-                  placeholder="R$ 0,00"
-                  placeholderTextColor={colors.disabled}
-                  value={customCents > 0 ? formatCents(customCents) : ''}
+                  cents={customCents}
+                  onChangeCents={setCustomCents}
                   onFocus={() => setSelected(OTHER)}
-                  onChangeText={(text) => {
-                    const digits = text.replace(/\D/g, '').slice(0, MAX_PRICE_DIGITS);
-                    setCustomCents(digits ? parseInt(digits, 10) : 0);
-                  }}
                 />
               </Pressable>
             </ScrollView>
